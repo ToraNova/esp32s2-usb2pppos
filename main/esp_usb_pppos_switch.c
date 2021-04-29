@@ -38,7 +38,6 @@ static const char *TAG_ETH = "usbeth";
 bool tud_network_recv_cb(const uint8_t *src, uint16_t size);
 uint16_t tud_network_xmit_cb(uint8_t *dst, void *ref, uint16_t arg);
 void tud_network_init_cb(void);
-void tud_service_traffic(void *pvparam);
 
 // usb descriptors
 extern tusb_desc_device_t desc_device;
@@ -107,7 +106,7 @@ void app_main(void) {
     ESP_LOGI(TAG_APP, "usbnetif is up.");
 
     //static httpd_handle_t server = NULL;
-    //start_webserver(); //start the server
+    start_webserver(); //start the server
 
     size_t hs;
     while (1){
@@ -124,7 +123,7 @@ void app_main(void) {
         }else{
             vTaskDelay( 10 / portTICK_PERIOD_MS );
         }
-        sys_check_timeouts(); //TODO: is this important?
+        //sys_check_timeouts(); //TODO: is this important?
     }
 
 }
