@@ -1,4 +1,6 @@
 idf_component_register(SRCS
-	"esp_usb_pppos_switch.c"
+	"netsuite_io.c"
 	"usb_descriptor.c"
+	"httpd.c"
+	"esp_usb_pppos_switch.c"
         INCLUDE_DIRS .)
