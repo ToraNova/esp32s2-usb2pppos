@@ -33,7 +33,7 @@ static esp_err_t netsuite_io_transmit_wrap(void *h, void *buffer, size_t len, vo
 static esp_err_t netsuite_io_transmit(void *h, void *buffer, size_t len) {
 	for(;;){
 		if(!tud_ready()) return ESP_FAIL;
-		if(tud_network_can_xmit(0)){
+		if(tud_network_can_xmit()){
 			struct pbuf *p = pbuf_alloc(PBUF_RAW, len, PBUF_POOL);
 			memcpy(p->payload, buffer, len);
 			tud_network_xmit(p, 0);

@@ -1,79 +1,80 @@
 diff --git a/components/tinyusb/CMakeLists.txt b/components/tinyusb/CMakeLists.txt
-index 5e90277ec2..bbd387a850 100644
+index 64f12cdab..60f164e31 100644
 --- a/components/tinyusb/CMakeLists.txt
 +++ b/components/tinyusb/CMakeLists.txt
-@@ -71,6 +71,15 @@ if(CONFIG_TINYUSB)
-             "additions/src/vfs_tinyusb.c"
-             )
-     endif() # CONFIG_TINYUSB_CDC_ENABLED
-+
-+    if(CONFIG_TINYUSB_NET_ENABLED)
-+        list(APPEND srcs
-+            "tinyusb/src/class/net/ecm_rndis_device.c"
-+            "tinyusb/lib/networking/rndis_reports.c")
-+        list(APPEND includes_private
-+            "tinyusb/lib/networking")
-+    endif()
-+
- endif() # CONFIG_TINYUSB
+@@ -52,6 +52,15 @@ if(CONFIG_USB_ENABLED)
+          "${COMPONENT_DIR}/additions/src/vfs_tinyusb.c")
+   endif()
  
- idf_component_register(SRCS ${srcs}
++  # net stuff if turned on
++  if(CONFIG_USB_NET_ENABLED)
++    list(APPEND srcs
++        "${COMPONENT_DIR}/tinyusb/src/class/net/net_device.c"
++        "${COMPONENT_DIR}/tinyusb/lib/networking/rndis_reports.c")
++    list(APPEND includes_private
++        "${COMPONENT_DIR}/tinyusb/lib/networking")
++   endif()
++
+   ### tinyusb lib ###
+   ###################
+   add_library(tinyusb STATIC ${srcs})
 diff --git a/components/tinyusb/Kconfig b/components/tinyusb/Kconfig
-index 9e36f21b35..332415ee21 100644
+index e2e723075..4fd9cf08f 100644
 --- a/components/tinyusb/Kconfig
 +++ b/components/tinyusb/Kconfig
-@@ -159,6 +159,15 @@ menu "TinyUSB Stack"
-                 help
-                     CDC FIFO size of TX channel.
-         endmenu # "Communication Device Class"
-+
-+        menu "Networking"
-+            config TINYUSB_NET_ENABLED
-+                bool "Enable TinyUSB Networking feature"
-+                default n
-+                help
-+                    Enable TinyUSB Networking feature.
-+        endmenu # "TinyUSB networking (RNDIS, ECM)"
-+
-     endif # TINYUSB
+@@ -138,6 +138,12 @@ menu "TinyUSB"
+         help
+             CDC FIFO size of TX
  
- endmenu # "TinyUSB Stack"
++    config USB_NET_ENABLED
++        bool "Enable USB RNDIS/ECM(CDC) TinyUSB driver"
++	default n
++	depends on USB_ENABLED
++	help
++	    Enable Ethernet over USB (CDC) TinyUSB driver.
+ 
+     config USB_DEBUG_LEVEL
+         int "TinyUSB log level (0-3)"
 diff --git a/components/tinyusb/additions/include/tusb_config.h b/components/tinyusb/additions/include/tusb_config.h
-index fdf5468c98..116a0dd8ad 100644
+index 05509d5e4..d88b6a2f8 100644
 --- a/components/tinyusb/additions/include/tusb_config.h
 +++ b/components/tinyusb/additions/include/tusb_config.h
-@@ -94,6 +94,7 @@ extern "C" {
- #define CFG_TUD_MSC                 CONFIG_TINYUSB_MSC_ENABLED
- #define CFG_TUD_HID                 CONFIG_TINYUSB_HID_ENABLED
- #define CFG_TUD_MIDI                CONFIG_TINYUSB_MIDI_ENABLED
-+#define CFG_TUD_ECM_RNDIS           CONFIG_TINYUSB_NET_ENABLED
- #define CFG_TUD_CUSTOM_CLASS        CONFIG_TINYUSB_CUSTOM_CLASS_ENABLED
+@@ -75,6 +75,7 @@ extern "C" {
+ #define CFG_TUD_MSC CONFIG_USB_MSC_ENABLED
+ #define CFG_TUD_HID CONFIG_USB_HID_ENABLED
+ #define CFG_TUD_MIDI CONFIG_USB_MIDI_ENABLED
++#define CFG_TUD_NET CONFIG_USB_NET_ENABLED
+ #define CFG_TUD_CUSTOM_CLASS CONFIG_USB_CUSTOM_CLASS_ENABLED
  
- #ifdef __cplusplus
+ /*         */
 diff --git a/components/tinyusb/additions/include_private/descriptors_control.h b/components/tinyusb/additions/include_private/descriptors_control.h
-index 63685ef081..60c58cffdf 100644
+index 4ef341932..a291bce0f 100644
 --- a/components/tinyusb/additions/include_private/descriptors_control.h
 +++ b/components/tinyusb/additions/include_private/descriptors_control.h
-@@ -22,7 +22,7 @@ enum {
- 
- //------------- Configuration Descriptor -------------//
- enum {
--#   if CFG_TUD_CDC
-+#   if CFG_TUD_CDC || CFG_TUD_ECM_RNDIS
+@@ -43,6 +43,10 @@ enum {
      ITF_NUM_CDC = 0,
      ITF_NUM_CDC_DATA,
  #   endif
-@@ -43,6 +43,17 @@ enum {
++#   if CFG_TUD_NET
++    ITF_NUM_CDC = 0,
++    ITF_NUM_CDC_DATA,
++#   endif
+ 
+ #   if CFG_TUD_MSC
+     ITF_NUM_MSC,
+@@ -51,10 +55,18 @@ enum {
+ #   if CFG_TUD_HID
+     ITF_NUM_HID,
+ #   endif
+-
      ITF_NUM_TOTAL
  };
  
 +enum
 +{
-+#if CFG_TUD_ECM_RNDIS
++#if CFG_TUD_NET
 +  CONFIG_ID_RNDIS = 0,
 +  CONFIG_ID_ECM   = 1,
-+#else
-+  CONFIG_ID_NCM   = 0,
 +#endif
 +  CONFIG_ID_COUNT
 +};
@@ -82,14 +83,15 @@ index 63685ef081..60c58cffdf 100644
      TUSB_DESC_TOTAL_LEN = TUD_CONFIG_DESC_LEN + CFG_TUD_CDC * TUD_CDC_DESC_LEN + CFG_TUD_MSC * TUD_MSC_DESC_LEN +
                         CFG_TUD_HID * TUD_HID_DESC_LEN
 diff --git a/components/tinyusb/additions/src/descriptors_control.c b/components/tinyusb/additions/src/descriptors_control.c
-index 02e4a4bf80..a05bdf7132 100644
+index 659deeaf3..8518deced 100644
 --- a/components/tinyusb/additions/src/descriptors_control.c
 +++ b/components/tinyusb/additions/src/descriptors_control.c
-@@ -22,6 +22,29 @@ uint8_t const desc_hid_report[] = {
+@@ -27,6 +27,30 @@ uint8_t const desc_hid_report[] = {
  };
  #endif
  
-+#if CFG_TUD_ECM_RNDIS
++#if CFG_TUD_NET
++#define DESC_CONFIG_CNT   0x02
 +#define EPNUM_NET_NOTIF   0x81
 +#define EPNUM_NET_OUT     0x02
 +#define EPNUM_NET_IN      0x82
@@ -115,23 +117,19 @@ index 02e4a4bf80..a05bdf7132 100644
  uint8_t const desc_configuration[] = {
      // interface count, string index, total length, attribute, power in mA
      TUD_CONFIG_DESCRIPTOR(1, ITF_NUM_TOTAL, 0, TUSB_DESC_TOTAL_LEN, TUSB_DESC_CONFIG_ATT_REMOTE_WAKEUP, 100),
-@@ -43,9 +66,10 @@ uint8_t const desc_configuration[] = {
- 
- #   if CFG_TUD_HID
-     // Interface number, string index, protocol, report descriptor len, EP In address, size & polling interval
--    TUD_HID_DESCRIPTOR(ITF_NUM_HID, 6, HID_PROTOCOL_NONE, sizeof(desc_hid_report), 0x80 | EPNUM_HID, 16, 10)
-+    TUD_HID_DESCRIPTOR(ITF_NUM_HID, 6, HID_PROTOCOL_NONE, sizeof(desc_hid_report), 0x80 | EPNUM_HID, 16, 10),
+@@ -44,6 +68,7 @@ uint8_t const desc_configuration[] = {
+     TUD_HID_DESCRIPTOR(ITF_NUM_HID, 6, HID_PROTOCOL_NONE, sizeof(desc_hid_report), 0x84, 16, 10)
  #   endif
  };
 +#endif
  
  // =============================================================================
  // CALLBACKS
-@@ -71,8 +95,12 @@ uint8_t const *tud_descriptor_device_cb(void)
+@@ -69,8 +94,12 @@ uint8_t const *tud_descriptor_device_cb(void)
   */
  uint8_t const *tud_descriptor_configuration_cb(uint8_t index)
  {
-+#if CFG_TUD_ECM_RNDIS
++#if CFG_TUD_NET
 +    return (index < 2) ? desc_configuration[index] : NULL;
 +#else
      (void)index; // for multiple configurations
